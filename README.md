@@ -72,7 +72,7 @@ DTAG
  ⬇️ UDP下行 │ 10.0 Mbps (1.2 MB/s)      │ 0/26335 (0%)              │ 0.040 ms                 
 
 ─────────────────────────────────────────────────────────────────
-测试完成时间: 2025-08-28 20:12:29 | 脚本开源地址：https://github.com/zywe03/realm-xwPF
+测试完成时间: 2025-08-28 20:12:29 | 脚本开源地址：https://github.com/byby5555/realm-xwPF-offline
 ```
 
 </details>
@@ -82,7 +82,7 @@ DTAG
 ### 一键安装
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/zbyby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
+wget -qO- https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
 ```
 
 ### 网络受限使用加速源,一键安装
@@ -373,13 +373,13 @@ MPTCP（启用MPTCP时创建）
 
 ## 🤝 技术支持
 
-- **其他开源项目：** [https://github.com/zywe03](https://github.com/zywe03)
+- **其他开源项目：** [https://github.com/byby5555](https://github.com/byby5555)
 - **介绍主页：** [https://zywe.de](https://zywe.de)
-- **问题反馈：** [GitHub Issues](https://github.com/zywe03/realm-xwPF/issues)
+- **问题反馈：** [GitHub Issues](https://github.com/byby5555/realm-xwPF-offline/issues)
 - **纯闲聊群** [tg交流群](https://t.me/zywe_chat) 
 
 ---
 
 **⭐ 如果这个项目对您有帮助，请给个 Star 支持一下！**
 
-[![Star History Chart](https://api.star-history.com/svg?repos=zywe03/realm-xwPF&type=Date)](https://www.star-history.com/#zywe03/realm-xwPF&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=byby5555/realm-xwPF-offline&type=Date)](https://www.star-history.com/#byby5555/realm-xwPF-offline&Date)
