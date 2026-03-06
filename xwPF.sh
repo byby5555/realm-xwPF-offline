@@ -9,7 +9,7 @@ LIB_DIR="$INSTALL_DIR/lib"
 SHORTCUT_PATH="/usr/local/bin/pf"
 
 # 仓库地址
-REPO_RAW_URL="https://raw.githubusercontent.com/zywe03/realm-xwPF/main"
+REPO_RAW_URL="https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main"
 
 # 模块列表（加载顺序）
 LIB_FILES=("core.sh" "rules.sh" "server.sh" "realm.sh" "ui.sh")
@@ -24,8 +24,16 @@ _NC='\033[0m'
 # 下载函数
 _download() {
     local url="$1" target="$2"
-    curl -fsSL --connect-timeout 10 --max-time 60 "$url" -o "$target" 2>/dev/null ||
-    wget -qO "$target" "$url" 2>/dev/null
+
+    # 若存在部分文件，优先断点续传
+    if [ -f "$target" ] && [ -s "$target" ]; then
+        curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 0 -C - "$url" -o "$target" 2>/dev/null ||
+        wget -c -qO "$target" "$url" 2>/dev/null
+        return $?
+    fi
+
+    curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 60 "$url" -o "$target" 2>/dev/null ||
+    wget -c -qO "$target" "$url" 2>/dev/null
 }
 
 # 安装/更新脚本文件到系统（幂等）
