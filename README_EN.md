@@ -72,7 +72,7 @@ DTAG
  ⬇️ UDP Down │ 10.0 Mbps (1.2 MB/s)      │ 0/26335 (0%)              │ 0.040 ms
 
 ─────────────────────────────────────────────────────────────────
-Completed: 2025-08-28 20:12:29 | Source: https://github.com/zywe03/realm-xwPF
+Completed: 2025-08-28 20:12:29 | Source: https://github.com/byby5555/realm-xwPF-offline
 ```
 
 </details>
@@ -82,13 +82,13 @@ Completed: 2025-08-28 20:12:29 | Source: https://github.com/zywe03/realm-xwPF
 ### One-Click Install
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/zywe03/realm-xwPF/main/xwPF.sh | sudo bash -s install
+wget -qO- https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
 ```
 
 ### Behind a Restricted Network? Use an Accelerated Mirror
 
 ```bash
-wget -qO- https://v6.gh-proxy.org/https://raw.githubusercontent.com/zywe03/realm-xwPF/main/xwPF.sh | sudo bash -s install
+wget -qO- https://v6.gh-proxy.org/https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
 ```
 If the mirror is down, retry a few times or switch to another proxy with built-in acceleration.
 
@@ -101,8 +101,8 @@ For servers with absolutely no network connectivity.
 
 **1. Download the following files on a machine that does have internet access**
 
-- **Main script**: [xwPF.sh](https://github.com/zywe03/realm-xwPF/raw/main/xwPF.sh)
-- **Module files** (all required): https://github.com/zywe03/realm-xwPF/tree/main/lib
+- **Main script**: [xwPF.sh](https://github.com/byby5555/realm-xwPF-offline/raw/main/xwPF.sh)
+- **Module files** (all required): https://github.com/byby5555/realm-xwPF-offline/tree/main/lib
 
 - **Realm binary** (pick the one matching your architecture):
 
@@ -371,13 +371,13 @@ MPTCP (created when MPTCP is enabled)
 
 ## 🤝 Support
 
-- **More Projects:** [https://github.com/zywe03](https://github.com/zywe03)
+- **More Projects:** [https://github.com/byby5555](https://github.com/byby5555)
 - **Homepage:** [https://zywe.de](https://zywe.de)
-- **Bug Reports:** [GitHub Issues](https://github.com/zywe03/realm-xwPF/issues)
+- **Bug Reports:** [GitHub Issues](https://github.com/byby5555/realm-xwPF-offline/issues)
 - **Chat:** [Telegram Group](https://t.me/zywe_chat)
 
 ---
 
 **⭐ If this project is useful to you, a Star would be much appreciated!**
 
-[![Star History Chart](https://api.star-history.com/svg?repos=zywe03/realm-xwPF&type=Date)](https://www.star-history.com/#zywe03/realm-xwPF&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=byby5555/realm-xwPF-offline&type=Date)](https://www.star-history.com/#byby5555/realm-xwPF-offline&Date)

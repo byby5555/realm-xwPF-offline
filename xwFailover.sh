@@ -14,6 +14,71 @@ HEALTH_STATUS_FILE="/etc/realm/health/health_status.conf"
 HEALTH_DIR="/etc/realm/health"
 LOCK_FILE="/var/lock/realm-health-check.lock"
 
+validate_positive_int() {
+    local value="$1"
+    local default_value="$2"
+
+    if [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -gt 0 ]; then
+        echo "$value"
+    else
+        echo "$default_value"
+    fi
+}
+
+validate_int_range() {
+    local value="$1"
+    local min="$2"
+    local max="$3"
+    local field_name="$4"
+
+    if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}${field_name} 必须是数字${NC}"
+        return 1
+    fi
+
+    if [ "$value" -lt "$min" ] || [ "$value" -gt "$max" ]; then
+        echo -e "${RED}${field_name} 超出范围: ${min}-${max}${NC}"
+        return 1
+    fi
+
+    return 0
+}
+
+get_port_failover_params() {
+    local port="$1"
+
+    for rule_file in "${RULES_DIR}"/rule-*.conf; do
+        if [ -f "$rule_file" ] && read_rule_file "$rule_file" && [ "$RULE_ROLE" = "1" ] && [ "$LISTEN_PORT" = "$port" ]; then
+            local interval=$(validate_positive_int "${HEALTH_CHECK_INTERVAL:-4}" 4)
+            local failure_threshold=$(validate_positive_int "${FAILURE_THRESHOLD:-2}" 2)
+            local success_threshold=$(validate_positive_int "${SUCCESS_THRESHOLD:-2}" 2)
+            local connection_timeout=$(validate_positive_int "${CONNECTION_TIMEOUT:-3}" 3)
+            local recovery_cooldown=$(validate_positive_int "${RECOVERY_COOLDOWN:-120}" 120)
+            echo "${interval}|${failure_threshold}|${success_threshold}|${connection_timeout}|${recovery_cooldown}"
+            return 0
+        fi
+    done
+
+    echo "4|2|2|3|120"
+}
+
+get_effective_health_check_interval() {
+    local min_interval=""
+
+    for rule_file in "${RULES_DIR}"/rule-*.conf; do
+        if [ -f "$rule_file" ] && read_rule_file "$rule_file"; then
+            if [ "$RULE_ROLE" = "1" ] && [ "$ENABLED" = "true" ] && [ "${FAILOVER_ENABLED:-false}" = "true" ]; then
+                local interval=$(validate_positive_int "${HEALTH_CHECK_INTERVAL:-4}" 4)
+                if [ -z "$min_interval" ] || [ "$interval" -lt "$min_interval" ]; then
+                    min_interval="$interval"
+                fi
+            fi
+        fi
+    done
+
+    echo "${min_interval:-4}"
+}
+
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         echo -e "${RED}错误: 此脚本需要 root 权限运行。${NC}"
@@ -57,7 +122,7 @@ read_rule_file_for_health_check() {
     unset FORWARD_TARGET SECURITY_LEVEL
     unset TLS_SERVER_NAME TLS_CERT_PATH TLS_KEY_PATH WS_PATH WS_HOST
     unset ENABLED BALANCE_MODE FAILOVER_ENABLED HEALTH_CHECK_INTERVAL
-    unset FAILURE_THRESHOLD SUCCESS_THRESHOLD CONNECTION_TIMEOUT
+    unset FAILURE_THRESHOLD SUCCESS_THRESHOLD CONNECTION_TIMEOUT RECOVERY_COOLDOWN
     unset TARGET_STATES WEIGHTS CREATED_TIME
 
     source "$rule_file"
@@ -191,7 +256,12 @@ toggle_failover_mode() {
                         status_color="${GREEN}"
                     fi
 
+                    local params
+                    params=$(get_port_failover_params "$port_key")
+                    IFS='|' read -r interval failure_threshold success_threshold connection_timeout recovery_cooldown <<< "$params"
+
                     echo -e "${GREEN}$rule_number.${NC} ${port_configs[$port_key]} (端口: $port_key) - $target_count个目标服务器 - 故障转移: ${status_color}$status_text${NC}"
+                    echo -e "    ${BLUE}检测间隔:${NC} ${interval}s | ${BLUE}失败阈值:${NC} ${failure_threshold}次 | ${BLUE}成功阈值:${NC} ${success_threshold}次 | ${BLUE}超时:${NC} ${connection_timeout}s | ${BLUE}冷却期:${NC} ${recovery_cooldown}s"
                 fi
             done
         fi
@@ -262,11 +332,15 @@ toggle_failover_mode() {
         echo -e "${color}✓ 已更新 $updated_count 个规则文件的故障转移状态${NC}"
 
         if [ "$new_status" = "true" ]; then
+            local params
+            params=$(get_port_failover_params "$selected_port")
+            IFS='|' read -r interval failure_threshold success_threshold connection_timeout recovery_cooldown <<< "$params"
             echo -e "${BLUE}故障转移参数:${NC}"
-            echo -e "  检查间隔: ${GREEN}4秒${NC}"
-            echo -e "  失败阈值: ${GREEN}连续2次${NC}"
-            echo -e "  成功阈值: ${GREEN}连续2次${NC}"
-            echo -e "  连接超时: ${GREEN}3秒${NC}"
+            echo -e "  检查间隔: ${GREEN}${interval}秒${NC}"
+            echo -e "  失败阈值: ${GREEN}连续${failure_threshold}次${NC}"
+            echo -e "  成功阈值: ${GREEN}连续${success_threshold}次${NC}"
+            echo -e "  连接超时: ${GREEN}${connection_timeout}秒${NC}"
+            echo -e "  恢复冷却: ${GREEN}${recovery_cooldown}秒${NC}"
         fi
 
         # 重启服务以应用更改
@@ -308,6 +382,8 @@ start_health_check_service() {
     local health_script="/etc/realm/health/health_check.sh"
     local health_timer="/etc/systemd/system/realm-health-check.timer"
     local health_service="/etc/systemd/system/realm-health-check.service"
+
+    local effective_interval="${1:-$(get_effective_health_check_interval)}"
 
     # 创建健康检查目录
     mkdir -p "$health_dir"
@@ -383,7 +459,7 @@ read_rule_file_for_health_check() {
     unset FORWARD_TARGET SECURITY_LEVEL
     unset TLS_SERVER_NAME TLS_CERT_PATH TLS_KEY_PATH WS_PATH WS_HOST
     unset ENABLED BALANCE_MODE FAILOVER_ENABLED HEALTH_CHECK_INTERVAL
-    unset FAILURE_THRESHOLD SUCCESS_THRESHOLD CONNECTION_TIMEOUT
+    unset FAILURE_THRESHOLD SUCCESS_THRESHOLD CONNECTION_TIMEOUT RECOVERY_COOLDOWN
     unset TARGET_STATES WEIGHTS CREATED_TIME
 
     source "$rule_file"
@@ -446,7 +522,7 @@ for rule_file in "${RULES_DIR}"/rule-*.conf; do
             # 如果之前是故障状态，检查是否可以恢复
             if [ "$status" = "failed" ] && [ "$success_count" -ge "${SUCCESS_THRESHOLD:-2}" ]; then
                 # 检查冷却期（基于故障开始时间）
-                cooldown_period=$((120))  # 120秒冷却期
+                cooldown_period="${RECOVERY_COOLDOWN:-120}"
                 if [ $((current_time - failure_start_time)) -ge "$cooldown_period" ]; then
                     status="healthy"
                     config_changed=true
@@ -517,7 +593,7 @@ Requires=realm-health-check.service
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=7sec
+OnUnitActiveSec=${effective_interval}sec
 Persistent=true
 
 [Install]
@@ -529,7 +605,148 @@ EOF
     systemctl enable realm-health-check.timer >/dev/null 2>&1
     systemctl start realm-health-check.timer >/dev/null 2>&1
 
-    echo -e "${GREEN}✓ 健康检查服务已启动${NC}"
+    echo -e "${GREEN}✓ 健康检查服务已启动 (检查间隔: ${effective_interval}s)${NC}"
+}
+
+configure_failover_params() {
+    clear
+    echo -e "${YELLOW}=== 故障转移参数配置（按端口组） ===${NC}"
+    echo ""
+
+    unset port_groups port_configs
+    declare -A port_groups
+    declare -A port_configs
+
+    for rule_file in "${RULES_DIR}"/rule-*.conf; do
+        if [ -f "$rule_file" ] && read_rule_file "$rule_file" && [ "$RULE_ROLE" = "1" ] && [ "$ENABLED" = "true" ] && [ "$BALANCE_MODE" != "off" ]; then
+            local port_key="$LISTEN_PORT"
+            [ -z "${port_configs[$port_key]}" ] && port_configs[$port_key]="$RULE_NAME"
+
+            IFS=',' read -ra hosts <<< "$REMOTE_HOST"
+            for host in "${hosts[@]}"; do
+                host=$(echo "$host" | xargs)
+                [ -z "$host" ] && continue
+                local target="${host}:${REMOTE_PORT}"
+                if [ -z "${port_groups[$port_key]}" ]; then
+                    port_groups[$port_key]="$target"
+                elif [[ ",${port_groups[$port_key]}," != *",${target},"* ]]; then
+                    port_groups[$port_key]="${port_groups[$port_key]},${target}"
+                fi
+            done
+        fi
+    done
+
+    local selectable_ports=()
+    local selectable_names=()
+    local idx=1
+
+    for port_key in $(printf '%s\n' "${!port_groups[@]}" | sort -n); do
+        IFS=',' read -ra targets <<< "${port_groups[$port_key]}"
+        if [ "${#targets[@]}" -gt 1 ]; then
+            selectable_ports+=("$port_key")
+            selectable_names+=("${port_configs[$port_key]}")
+            echo -e "${GREEN}${idx}.${NC} ${port_configs[$port_key]} (端口: $port_key)"
+            idx=$((idx + 1))
+        fi
+    done
+
+    if [ ${#selectable_ports[@]} -eq 0 ]; then
+        echo -e "${YELLOW}暂无可配置的故障转移规则组（需中转+负载均衡+多目标）${NC}"
+        return 1
+    fi
+
+    echo ""
+    read -p "请选择规则编号 [1-${#selectable_ports[@]}] (回车返回): " choice
+    [ -z "$choice" ] && return 0
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#selectable_ports[@]} ]; then
+        echo -e "${RED}无效的编号${NC}"
+        return 1
+    fi
+
+    local selected_index=$((choice - 1))
+    local selected_port="${selectable_ports[$selected_index]}"
+    local selected_name="${selectable_names[$selected_index]}"
+
+    local params
+    params=$(get_port_failover_params "$selected_port")
+    IFS='|' read -r current_interval current_failure current_success current_timeout current_cooldown <<< "$params"
+
+    echo ""
+    echo -e "${BLUE}当前规则组:${NC} ${selected_name} (端口: ${selected_port})"
+    read -p "检查间隔秒数 [当前 ${current_interval}]: " input_interval
+    read -p "失败阈值(连续失败次数) [当前 ${current_failure}]: " input_failure
+    read -p "成功阈值(连续成功次数) [当前 ${current_success}]: " input_success
+    read -p "连接超时秒数 [当前 ${current_timeout}]: " input_timeout
+    read -p "恢复冷却秒数 [当前 ${current_cooldown}]: " input_cooldown
+
+    local new_interval="${input_interval:-$current_interval}"
+    local new_failure="${input_failure:-$current_failure}"
+    local new_success="${input_success:-$current_success}"
+    local new_timeout="${input_timeout:-$current_timeout}"
+    local new_cooldown="${input_cooldown:-$current_cooldown}"
+
+    # 参数阈值限制：超出范围直接报错并返回
+    validate_int_range "$new_interval" 1 60 "检查间隔(秒)" || return 1
+    validate_int_range "$new_failure" 1 10 "失败阈值(次)" || return 1
+    validate_int_range "$new_success" 1 10 "成功阈值(次)" || return 1
+    validate_int_range "$new_timeout" 1 10 "连接超时(秒)" || return 1
+    validate_int_range "$new_cooldown" 10 3600 "恢复冷却(秒)" || return 1
+
+    local updated_count=0
+    for rule_file in "${RULES_DIR}"/rule-*.conf; do
+        if [ -f "$rule_file" ] && read_rule_file "$rule_file" && [ "$RULE_ROLE" = "1" ] && [ "$LISTEN_PORT" = "$selected_port" ]; then
+            if grep -q '^HEALTH_CHECK_INTERVAL=' "$rule_file"; then
+                sed -i "s/^HEALTH_CHECK_INTERVAL=.*/HEALTH_CHECK_INTERVAL=\"$new_interval\"/" "$rule_file"
+            else
+                echo "HEALTH_CHECK_INTERVAL=\"$new_interval\"" >> "$rule_file"
+            fi
+
+            if grep -q '^FAILURE_THRESHOLD=' "$rule_file"; then
+                sed -i "s/^FAILURE_THRESHOLD=.*/FAILURE_THRESHOLD=\"$new_failure\"/" "$rule_file"
+            else
+                echo "FAILURE_THRESHOLD=\"$new_failure\"" >> "$rule_file"
+            fi
+
+            if grep -q '^SUCCESS_THRESHOLD=' "$rule_file"; then
+                sed -i "s/^SUCCESS_THRESHOLD=.*/SUCCESS_THRESHOLD=\"$new_success\"/" "$rule_file"
+            else
+                echo "SUCCESS_THRESHOLD=\"$new_success\"" >> "$rule_file"
+            fi
+
+            if grep -q '^CONNECTION_TIMEOUT=' "$rule_file"; then
+                sed -i "s/^CONNECTION_TIMEOUT=.*/CONNECTION_TIMEOUT=\"$new_timeout\"/" "$rule_file"
+            else
+                echo "CONNECTION_TIMEOUT=\"$new_timeout\"" >> "$rule_file"
+            fi
+
+            if grep -q '^RECOVERY_COOLDOWN=' "$rule_file"; then
+                sed -i "s/^RECOVERY_COOLDOWN=.*/RECOVERY_COOLDOWN=\"$new_cooldown\"/" "$rule_file"
+            else
+                echo "RECOVERY_COOLDOWN=\"$new_cooldown\"" >> "$rule_file"
+            fi
+
+            updated_count=$((updated_count + 1))
+        fi
+    done
+
+    echo -e "${GREEN}✓ 已更新 $updated_count 个规则文件参数${NC}"
+    echo -e "${YELLOW}正在重启Realm服务...${NC}"
+    restart_realm_service
+
+    local has_enabled_failover=false
+    for rule_file in "${RULES_DIR}"/rule-*.conf; do
+        if [ -f "$rule_file" ] && read_rule_file "$rule_file" && [ "$RULE_ROLE" = "1" ] && [ "$ENABLED" = "true" ] && [ "${FAILOVER_ENABLED:-false}" = "true" ]; then
+            has_enabled_failover=true
+            break
+        fi
+    done
+
+    if [ "$has_enabled_failover" = "true" ]; then
+        echo -e "${YELLOW}正在刷新健康检查定时器（按新间隔）...${NC}"
+        start_health_check_service "$(get_effective_health_check_interval)"
+    fi
+
+    return 0
 }
 
 # 停止健康检查服务
@@ -612,6 +829,7 @@ show_help() {
     echo ""
     echo "用法:"
     echo "  $0 toggle [port]          # 切换故障转移状态"
+    echo "  $0 config                 # 配置故障转移参数(间隔/阈值/超时/冷却)"
     echo "  $0 status                 # 查看健康状态"
     echo "  $0 start                  # 启动健康检查服务"
     echo "  $0 stop                   # 停止健康检查服务"
@@ -637,6 +855,9 @@ main() {
             ;;
         "status")
             show_health_status
+            ;;
+        "config")
+            configure_failover_params
             ;;
         "start")
             start_health_check_service

@@ -207,7 +207,7 @@ manage_dependencies() {
         if [ "$mode" = "check" ]; then
             echo -e "${RED}错误: 缺少必备工具: ${missing_tools[*]}${NC}"
             echo -e "${YELLOW}请先选择菜单选项1进行安装，或手动运行安装命令:${NC}"
-            echo -e "${BLUE}curl -fsSL https://raw.githubusercontent.com/zywe03/realm-xwPF/main/xwPF.sh | sudo bash -s install${NC}"
+            echo -e "${BLUE}curl -fsSL https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install${NC}"
             exit 1
         elif [ "$mode" = "install" ]; then
             echo -e "${YELLOW}需要安装以下工具: ${missing_tools[*]}${NC}"
