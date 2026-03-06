@@ -72,13 +72,28 @@ download_from_sources() {
     local url="$1"
     local target_path="$2"
 
-    if curl -fsSL --connect-timeout $SHORT_CONNECT_TIMEOUT --max-time $SHORT_MAX_TIMEOUT "$url" -o "$target_path"; then
+    # 断点续传优先：若存在部分文件则继续下载
+    if [ -f "$target_path" ] && [ -s "$target_path" ]; then
+        if curl -fL --retry 5 --retry-delay 2 --connect-timeout $SHORT_CONNECT_TIMEOUT --max-time 0 -C - "$url" -o "$target_path"; then
+            echo -e "${GREEN}✓ 下载成功(断点续传)${NC}" >&2
+            return 0
+        fi
+    fi
+
+    # 全量下载（带重试）
+    if curl -fL --retry 5 --retry-delay 2 --connect-timeout $SHORT_CONNECT_TIMEOUT --max-time 0 "$url" -o "$target_path"; then
         echo -e "${GREEN}✓ 下载成功${NC}" >&2
         return 0
-    else
-        echo -e "${RED}✗ 下载失败${NC}" >&2
-        return 1
     fi
+
+    # wget 兜底，同样支持断点续传
+    if wget -c --tries=5 --timeout=30 -O "$target_path" "$url"; then
+        echo -e "${GREEN}✓ 下载成功(wget断点续传)${NC}" >&2
+        return 0
+    fi
+
+    echo -e "${RED}✗ 下载失败${NC}" >&2
+    return 1
 }
 
 
