@@ -85,12 +85,57 @@ DTAG
 wget -qO- https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
 ```
 
+或使用 `curl`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
+```
+
 ### 网络受限使用加速源,一键安装
 
 ```bash
 wget -qO- https://v6.gh-proxy.org/https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
 ```
+
+或使用 `curl`：
+
+```bash
+curl -fsSL https://v6.gh-proxy.org/https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
+```
 若加速源失效，可多次重试或更换其他具有内置加速功能的代理源
+
+安装完成后将自动：
+- 启动内置 Web 管理服务（默认 `0.0.0.0:8080`）
+- 显示本机 Web 管理地址（本地 IP + 端口）
+- 随机生成强密码账号（默认随机账号 + 强随机密码）
+
+可在主菜单进入：
+- `9. Web 管理设置`（修改 Web 端口 / 重置账号密码 / 查看访问信息）
+
+
+如果页面打不开，可排查：
+```bash
+sudo systemctl status realm-web --no-pager
+sudo journalctl -u realm-web -n 100 --no-pager
+ss -lntp | grep 8080
+```
+
+### 一键卸载（菜单内置）
+
+安装完成后，脚本主菜单已内置 **卸载服务** 选项，可一键清理。
+
+```bash
+sudo pf
+```
+
+进入菜单后选择：
+- `8. 卸载服务`（分阶段卸载）
+
+如果 `pf` 命令不存在，也可直接运行：
+
+```bash
+sudo bash /usr/local/bin/xwPF.sh
+```
 
 ## 无法联网的离线安装
 
@@ -141,6 +186,71 @@ bash /usr/local/bin/xwPF.sh
 2. 提示 **离线安装realm输入完整路径(回车默认自动下载):** → 输入 Realm 压缩包的完整路径即可
 
 </details>
+
+
+
+## Debian 直装 Web 管理版（非 Docker）实现建议
+
+你提到不走 Docker，而是在 Debian 直接实现：**可以做到**，并且支持：
+- Web 管理界面
+- 账号密码认证
+- 安装时自定义 Web 端口
+
+### 需要的依赖工具（Debian）
+
+> 下面是“脚本 + Web 管理端”组合的常见依赖，按功能分组。
+
+- 基础工具：`curl` `wget` `tar` `unzip` `jq` `bc` `ca-certificates`
+- 网络与系统工具：`iproute2` `iptables`/`nftables` `lsof` `procps` `netcat-openbsd`
+- 服务与进程：`systemd` `systemctl` `openssl`
+- Web 反向代理（可选，推荐其一）：`nginx` 或 `caddy`
+- Python 方案（若 Web 后端用 Python）：`python3` `python3-venv` `python3-pip`
+- Node.js 方案（若 Web 前端/后端用 Node）：`nodejs` `npm`（或 `pnpm`）
+
+### 可实现的 Web 功能
+
+- 规则增删改查、启停、批量操作
+- Realm 配置生成与重载
+- 负载均衡/故障转移可视化
+- 日志与状态查看
+- 导入导出配置
+
+### 密码认证如何做
+
+建议最低安全基线：
+- 账号密码登录（密码哈希：`bcrypt`/`argon2`）
+- 会话过期（Session 或 JWT）
+- 登录失败限流
+- 若使用 Cookie：启用 CSRF 防护
+
+### 安装时选择端口（建议交互方式）
+
+可在安装脚本中增加交互：
+
+```bash
+read -rp "请输入 Web 管理端口 [默认 8080]: " WEB_PORT
+WEB_PORT=${WEB_PORT:-8080}
+```
+
+然后写入配置并放行防火墙：
+
+```bash
+# 示例：写入 /etc/realm/manager.conf
+echo "WEB_PORT=${WEB_PORT}" >> /etc/realm/manager.conf
+
+# nftables/ufw 二选一放行
+# ufw allow ${WEB_PORT}/tcp
+```
+
+### 一键安装命令（非 Docker，示例）
+
+当你后续提供 `install-web-panel.sh` 后，可直接使用：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/install-web-panel.sh | sudo bash
+```
+
+安装脚本里完成：依赖安装、端口选择、账号初始化、systemd 服务注册与启动。
 
 
 ## ✨ 核心特性
@@ -320,6 +430,7 @@ IP地址：MPTCP协议需要知道可以使用哪些IP地址建立子流
 系统文件
 ├── /usr/local/bin/
 │   ├── realm                    # Realm 主程序
+│   ├── realm-web-panel.py       # 内置 Web 管理面板（Python）
 │   ├── xwPF.sh                  # 管理脚本入口
 │   ├── lib/                     # 模块目录
 │   │   ├── core.sh              # 核心工具（系统检测/依赖/网络/验证）
@@ -337,7 +448,8 @@ IP地址：MPTCP协议需要知道可以使用哪些IP地址建立子流
 │       └── ...
 │
 └── /etc/systemd/system/
-    └── realm.service            # Realm 主服务文件
+    ├── realm.service            # Realm 主服务文件
+    └── realm-web.service        # Web 管理服务文件
 ```
 
 ### 按需下载（点击对应功能时才会下载）

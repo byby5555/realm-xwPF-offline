@@ -21,7 +21,7 @@ WS_HOST=""
 RULE_ID=""
 RULE_NAME=""
 
-REQUIRED_TOOLS=("curl" "wget" "tar" "grep" "cut" "bc" "jq")
+REQUIRED_TOOLS=("curl" "wget" "tar" "grep" "cut" "bc" "jq" "openssl" "python3")
 
 # 系统标识（由 detect_system 设置）
 DISTRO=""        # debian | alpine | centos
@@ -76,6 +76,8 @@ CONFIG_DIR="/etc/realm"
 MANAGER_CONF="${CONFIG_DIR}/manager.conf"
 CONFIG_PATH="${CONFIG_DIR}/config.json"
 SYSTEMD_PATH="/etc/systemd/system/realm.service"
+WEB_PANEL_PATH="/usr/local/bin/realm-web-panel.py"
+WEB_SYSTEMD_PATH="/etc/systemd/system/realm-web.service"
 RULES_DIR="${CONFIG_DIR}/rules"
 
 # 默认tls和host域名（加密解密需要相同SNI）
@@ -84,6 +86,121 @@ DEFAULT_SNI_DOMAIN="www.tesla.com"
 # 网络超时配置
 SHORT_CONNECT_TIMEOUT=5
 SHORT_MAX_TIMEOUT=7
+
+# ---------- Web 管理参数 ----------
+DEFAULT_WEB_PORT="8080"
+
+ensure_manager_conf() {
+    mkdir -p "$CONFIG_DIR"
+    [ -f "$MANAGER_CONF" ] || touch "$MANAGER_CONF"
+}
+
+get_manager_conf_value() {
+    local key="$1"
+    local default_value="$2"
+
+    if [ ! -f "$MANAGER_CONF" ]; then
+        echo "$default_value"
+        return 0
+    fi
+
+    local value
+    value=$(grep -E "^${key}=" "$MANAGER_CONF" 2>/dev/null | tail -n1 | cut -d'=' -f2-)
+    value="${value%\"}"
+    value="${value#\"}"
+
+    if [ -z "$value" ]; then
+        echo "$default_value"
+    else
+        echo "$value"
+    fi
+}
+
+set_manager_conf_value() {
+    local key="$1"
+    local value="$2"
+
+    ensure_manager_conf
+
+    if grep -qE "^${key}=" "$MANAGER_CONF" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$MANAGER_CONF"
+    else
+        echo "${key}=\"${value}\"" >> "$MANAGER_CONF"
+    fi
+}
+
+generate_random_username() {
+    local suffix
+    suffix=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom 2>/dev/null | head -c 6)
+    [ -z "$suffix" ] && suffix=$(date +%s | tail -c 7)
+    echo "admin_${suffix}"
+}
+
+generate_strong_password() {
+    local pwd
+    if command -v openssl >/dev/null 2>&1; then
+        pwd=$(openssl rand -base64 36 2>/dev/null | tr -d '\n' | tr '/+' 'A9' | head -c 20)
+    else
+        pwd=$(LC_ALL=C tr -dc 'A-Za-z0-9!@#%^&*()_+=-' </dev/urandom 2>/dev/null | head -c 20)
+    fi
+
+    if [ -z "$pwd" ]; then
+        pwd="XwPF$(date +%s)A!9"
+    fi
+
+    echo "$pwd"
+}
+
+get_local_server_ip() {
+    local local_ip
+    local_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -n "$local_ip" ]; then
+        echo "$local_ip"
+        return 0
+    fi
+
+    local_ip=$(ip route get 1 2>/dev/null | awk '/src/ {for(i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
+    echo "${local_ip:-127.0.0.1}"
+}
+
+is_valid_port() {
+    local port="$1"
+    [[ "$port" =~ ^[0-9]+$ ]] || return 1
+    [ "$port" -ge 1 ] && [ "$port" -le 65535 ]
+}
+
+init_web_manager_defaults() {
+    ensure_manager_conf
+
+    local web_port web_user web_pass
+    web_port=$(get_manager_conf_value "WEB_PORT" "$DEFAULT_WEB_PORT")
+    if ! is_valid_port "$web_port"; then
+        web_port="$DEFAULT_WEB_PORT"
+        set_manager_conf_value "WEB_PORT" "$web_port"
+    fi
+
+    web_user=$(get_manager_conf_value "WEB_USERNAME" "")
+    [ -z "$web_user" ] && set_manager_conf_value "WEB_USERNAME" "$(generate_random_username)"
+
+    web_pass=$(get_manager_conf_value "WEB_PASSWORD" "")
+    [ -z "$web_pass" ] && set_manager_conf_value "WEB_PASSWORD" "$(generate_strong_password)"
+}
+
+show_web_access_info() {
+    init_web_manager_defaults
+
+    local web_port web_user web_pass local_ip
+    web_port=$(get_manager_conf_value "WEB_PORT" "$DEFAULT_WEB_PORT")
+    web_user=$(get_manager_conf_value "WEB_USERNAME" "")
+    web_pass=$(get_manager_conf_value "WEB_PASSWORD" "")
+    local_ip=$(get_local_server_ip)
+
+    echo -e "${GREEN}=== Web 管理访问信息 ===${NC}"
+    echo -e "访问地址: ${BLUE}http://${local_ip}:${web_port}${NC}"
+    echo -e "登录账号: ${YELLOW}${web_user}${NC}"
+    echo -e "登录密码: ${YELLOW}${web_pass}${NC}"
+    echo -e "${RED}请立即妥善保存账号密码，并在菜单中修改为你自己的密码。${NC}"
+}
 
 # 生成network配置
 generate_network_config() {
