@@ -142,3 +142,56 @@
 - 先做“功能对齐”，保证能力不减
 - 再做“交互优化”，提升可用性
 - 最后做“权限与运维增强”，实现比旧版更强的可维护性与安全性
+
+
+---
+
+## 一键安装拉取 Docker 命令（可直接落地）
+
+你可以用和当前项目一致的分发思路：**把安装脚本放在仓库根目录，然后通过 GitHub Raw 一键执行**。
+
+### 1) 标准一键安装命令（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/install-docker-panel.sh | sudo bash
+```
+
+### 2) 网络受限时的加速源命令
+
+```bash
+curl -fsSL https://v6.gh-proxy.org/https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/install-docker-panel.sh | sudo bash
+```
+
+### 3) 命令背后建议完成的动作（脚本内）
+
+`install-docker-panel.sh` 建议按以下流程执行：
+1. 检测并安装 Docker / Docker Compose（若缺失）
+2. 创建安装目录（如 `/opt/realm-panel`）
+3. 下载或写入 `docker-compose.yml`
+4. 执行 `docker compose pull`
+5. 执行 `docker compose up -d`
+6. 输出访问地址与初始化账号密码提示
+
+示例核心命令：
+
+```bash
+cd /opt/realm-panel
+docker compose pull
+docker compose up -d
+```
+
+### 4) 若你希望“自动生成一键命令”
+
+本质就是把脚本文件名和分支拼成 Raw URL：
+
+```text
+https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<script>.sh
+```
+
+对应执行模板：
+
+```bash
+curl -fsSL <RAW_URL> | sudo bash
+```
+
+> 结论：先把安装逻辑固化到 `install-docker-panel.sh`，再发布上述 `curl -fsSL ... | sudo bash` 即可形成“一键安装拉取 Docker 并启动服务”的命令。
