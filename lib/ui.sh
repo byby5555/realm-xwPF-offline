@@ -737,6 +737,69 @@ port_traffic_dog_menu() {
     read -p "按回车键返回主菜单..."
 }
 
+
+web_panel_settings_menu() {
+    while true; do
+        clear
+
+        init_web_manager_defaults
+        local web_port web_user local_ip
+        web_port=$(get_manager_conf_value "WEB_PORT" "$DEFAULT_WEB_PORT")
+        web_user=$(get_manager_conf_value "WEB_USERNAME" "")
+        local_ip=$(get_local_server_ip)
+
+        echo -e "${GREEN}=== Web 管理设置 ===${NC}"
+        echo -e "访问地址: ${BLUE}http://${local_ip}:${web_port}${NC}"
+        echo -e "当前账号: ${YELLOW}${web_user}${NC}"
+        echo ""
+        echo "请选择操作:"
+        echo -e "${GREEN}1.${NC} 修改 Web 端口"
+        echo -e "${BLUE}2.${NC} 重置账号与强随机密码"
+        echo -e "${YELLOW}3.${NC} 显示当前访问与登录信息"
+        echo -e "${RED}0.${NC} 返回主菜单"
+        echo ""
+
+        read -p "请输入选择 [0-3]: " web_choice
+        echo ""
+
+        case "$web_choice" in
+            1)
+                read -rp "请输入新的 Web 端口 [1-65535，当前 ${web_port}]: " new_port
+                if is_valid_port "$new_port"; then
+                    set_manager_conf_value "WEB_PORT" "$new_port"
+                    echo -e "${GREEN}✓ Web 端口已更新为: ${new_port}${NC}"
+                else
+                    echo -e "${RED}无效端口，请输入 1-65535 的数字${NC}"
+                fi
+                read -p "按回车键继续..."
+                ;;
+            2)
+                local new_user new_pass
+                new_user=$(generate_random_username)
+                new_pass=$(generate_strong_password)
+                set_manager_conf_value "WEB_USERNAME" "$new_user"
+                set_manager_conf_value "WEB_PASSWORD" "$new_pass"
+                echo -e "${GREEN}✓ 已重置 Web 登录凭据${NC}"
+                show_web_access_info
+                echo ""
+                read -p "按回车键继续..."
+                ;;
+            3)
+                show_web_access_info
+                echo ""
+                read -p "按回车键继续..."
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}无效选择，请输入 0-3${NC}"
+                read -p "按回车键继续..."
+                ;;
+        esac
+    done
+}
+
 show_menu() {
     while true; do
         clear
@@ -756,10 +819,11 @@ show_menu() {
         echo -e "${BLUE}6.${NC} 端口流量狗（统计端口流量）"
         echo -e "${BLUE}7.${NC} 中转网络链路测试"
         echo -e "${RED}8.${NC} 卸载服务"
+        echo -e "${CYAN}9.${NC} Web 管理设置"
         echo -e "${YELLOW}0.${NC} 退出"
         echo ""
 
-        read -p "请输入选择 [0-8]: " choice
+        read -p "请输入选择 [0-9]: " choice
         echo ""
 
         case $choice in
@@ -799,12 +863,16 @@ show_menu() {
                 uninstall_realm
                 read -p "按回车键继续..."
                 ;;
+            9)
+                check_dependencies
+                web_panel_settings_menu
+                ;;
             0)
                 echo -e "${BLUE}感谢使用xwPF 网络转发管理脚本！${NC}"
                 exit 0
                 ;;
             *)
-                echo -e "${RED}无效选择，请输入 0-8${NC}"
+                echo -e "${RED}无效选择，请输入 0-9${NC}"
                 read -p "按回车键继续..."
                 ;;
         esac
