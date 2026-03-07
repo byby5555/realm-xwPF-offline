@@ -912,7 +912,9 @@ smart_install() {
 
     # 下载最新的 realm 主程序
     if install_realm; then
+        init_web_manager_defaults
         echo -e "${GREEN}=== 安装完成！ ===${NC}"
+        show_web_access_info
         echo -e "${YELLOW}输入快捷命令 ${GREEN}pf${YELLOW} 进入脚本交互界面${NC}"
     else
         echo -e "${RED}错误: realm安装失败${NC}"
