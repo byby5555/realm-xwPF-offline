@@ -21,7 +21,7 @@ WS_HOST=""
 RULE_ID=""
 RULE_NAME=""
 
-REQUIRED_TOOLS=("curl" "wget" "tar" "grep" "cut" "bc" "jq" "openssl")
+REQUIRED_TOOLS=("curl" "wget" "tar" "grep" "cut" "bc" "jq" "openssl" "python3")
 
 # 系统标识（由 detect_system 设置）
 DISTRO=""        # debian | alpine | centos
@@ -76,6 +76,8 @@ CONFIG_DIR="/etc/realm"
 MANAGER_CONF="${CONFIG_DIR}/manager.conf"
 CONFIG_PATH="${CONFIG_DIR}/config.json"
 SYSTEMD_PATH="/etc/systemd/system/realm.service"
+WEB_PANEL_PATH="/usr/local/bin/realm-web-panel.py"
+WEB_SYSTEMD_PATH="/etc/systemd/system/realm-web.service"
 RULES_DIR="${CONFIG_DIR}/rules"
 
 # 默认tls和host域名（加密解密需要相同SNI）

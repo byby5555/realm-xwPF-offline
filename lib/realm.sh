@@ -31,6 +31,95 @@ svc_logs() {
     else journalctl -u realm -f --no-pager; fi
 }
 
+
+
+# ---- Web 面板服务抽象层 ----
+web_svc_start()        { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-service realm-web start;   else systemctl start realm-web;   fi; }
+web_svc_stop()         { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-service realm-web stop;    else systemctl stop realm-web;    fi; }
+web_svc_restart()      { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-service realm-web restart; else systemctl restart realm-web; fi; }
+web_svc_enable()       { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-update add realm-web default >/dev/null 2>&1; else systemctl enable realm-web >/dev/null 2>&1;  fi; }
+web_svc_disable()      { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-update del realm-web default >/dev/null 2>&1; else systemctl disable realm-web >/dev/null 2>&1; fi; }
+web_svc_enabled_text() {
+    if [ "$INIT_SYSTEM" = "openrc" ]; then
+        if rc-update show default 2>/dev/null | grep -q realm-web; then echo "enabled"; else echo "disabled"; fi
+    else systemctl is-enabled realm-web 2>/dev/null; fi
+}
+web_svc_is_active() {
+    if [ "$INIT_SYSTEM" = "openrc" ]; then rc-service realm-web status >/dev/null 2>&1; return $?
+    else local s=$(systemctl is-active realm-web 2>/dev/null); [ "$s" = "active" ]; fi
+}
+
+install_web_panel() {
+    local web_src_url="https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/web/realm_web_panel.py"
+
+    echo -e "${YELLOW}正在安装 Web 管理面板...${NC}"
+    mkdir -p "$(dirname "$WEB_PANEL_PATH")"
+
+    if ! download_from_sources "$web_src_url" "$WEB_PANEL_PATH"; then
+        echo -e "${RED}✗ Web 管理面板脚本下载失败${NC}"
+        return 1
+    fi
+
+    chmod +x "$WEB_PANEL_PATH"
+    echo -e "${GREEN}✓ Web 管理面板脚本安装成功${NC}"
+    return 0
+}
+
+generate_web_service_file() {
+    local web_port
+    web_port=$(get_manager_conf_value "WEB_PORT" "$DEFAULT_WEB_PORT")
+
+    if [ "$INIT_SYSTEM" = "openrc" ]; then
+        cat > /etc/init.d/realm-web <<EOF
+#!/sbin/openrc-run
+name="realm-web"
+command="/usr/bin/python3"
+command_args="${WEB_PANEL_PATH} --host 0.0.0.0 --port ${web_port} --config ${MANAGER_CONF}"
+command_background=true
+pidfile="/run/\${RC_SVCNAME}.pid"
+depend() { need net; }
+EOF
+        chmod +x /etc/init.d/realm-web
+    else
+        cat > "$WEB_SYSTEMD_PATH" <<EOF
+[Unit]
+Description=realm-web-panel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 ${WEB_PANEL_PATH} --host 0.0.0.0 --port ${web_port} --config ${MANAGER_CONF}
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+    fi
+
+    echo -e "${GREEN}✓ Web 面板服务文件已生成 (端口: ${web_port})${NC}"
+}
+
+restart_web_panel_service() {
+    generate_web_service_file
+    web_svc_enable
+
+    if web_svc_is_active; then
+        web_svc_restart >/dev/null 2>&1
+    else
+        web_svc_start >/dev/null 2>&1
+    fi
+
+    if web_svc_is_active; then
+        echo -e "${GREEN}✓ Web 管理面板服务运行中${NC}"
+        return 0
+    fi
+
+    echo -e "${RED}✗ Web 管理面板服务启动失败${NC}"
+    return 1
+}
+
 # 检测虚拟化环境
 detect_virtualization() {
     local virt_type="物理机"
@@ -191,7 +280,96 @@ safe_stop_realm_service() {
 install_realm() {
     echo -e "${GREEN}正在检查 realm 安装状态...${NC}"
 
-    # 检测虚拟化环境并显示
+    
+
+# ---- Web 面板服务抽象层 ----
+web_svc_start()        { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-service realm-web start;   else systemctl start realm-web;   fi; }
+web_svc_stop()         { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-service realm-web stop;    else systemctl stop realm-web;    fi; }
+web_svc_restart()      { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-service realm-web restart; else systemctl restart realm-web; fi; }
+web_svc_enable()       { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-update add realm-web default >/dev/null 2>&1; else systemctl enable realm-web >/dev/null 2>&1;  fi; }
+web_svc_disable()      { if [ "$INIT_SYSTEM" = "openrc" ]; then rc-update del realm-web default >/dev/null 2>&1; else systemctl disable realm-web >/dev/null 2>&1; fi; }
+web_svc_enabled_text() {
+    if [ "$INIT_SYSTEM" = "openrc" ]; then
+        if rc-update show default 2>/dev/null | grep -q realm-web; then echo "enabled"; else echo "disabled"; fi
+    else systemctl is-enabled realm-web 2>/dev/null; fi
+}
+web_svc_is_active() {
+    if [ "$INIT_SYSTEM" = "openrc" ]; then rc-service realm-web status >/dev/null 2>&1; return $?
+    else local s=$(systemctl is-active realm-web 2>/dev/null); [ "$s" = "active" ]; fi
+}
+
+install_web_panel() {
+    local web_src_url="https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/web/realm_web_panel.py"
+
+    echo -e "${YELLOW}正在安装 Web 管理面板...${NC}"
+    mkdir -p "$(dirname "$WEB_PANEL_PATH")"
+
+    if ! download_from_sources "$web_src_url" "$WEB_PANEL_PATH"; then
+        echo -e "${RED}✗ Web 管理面板脚本下载失败${NC}"
+        return 1
+    fi
+
+    chmod +x "$WEB_PANEL_PATH"
+    echo -e "${GREEN}✓ Web 管理面板脚本安装成功${NC}"
+    return 0
+}
+
+generate_web_service_file() {
+    local web_port
+    web_port=$(get_manager_conf_value "WEB_PORT" "$DEFAULT_WEB_PORT")
+
+    if [ "$INIT_SYSTEM" = "openrc" ]; then
+        cat > /etc/init.d/realm-web <<EOF
+#!/sbin/openrc-run
+name="realm-web"
+command="/usr/bin/python3"
+command_args="${WEB_PANEL_PATH} --host 0.0.0.0 --port ${web_port} --config ${MANAGER_CONF}"
+command_background=true
+pidfile="/run/\${RC_SVCNAME}.pid"
+depend() { need net; }
+EOF
+        chmod +x /etc/init.d/realm-web
+    else
+        cat > "$WEB_SYSTEMD_PATH" <<EOF
+[Unit]
+Description=realm-web-panel
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 ${WEB_PANEL_PATH} --host 0.0.0.0 --port ${web_port} --config ${MANAGER_CONF}
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+    fi
+
+    echo -e "${GREEN}✓ Web 面板服务文件已生成 (端口: ${web_port})${NC}"
+}
+
+restart_web_panel_service() {
+    generate_web_service_file
+    web_svc_enable
+
+    if web_svc_is_active; then
+        web_svc_restart >/dev/null 2>&1
+    else
+        web_svc_start >/dev/null 2>&1
+    fi
+
+    if web_svc_is_active; then
+        echo -e "${GREEN}✓ Web 管理面板服务运行中${NC}"
+        return 0
+    fi
+
+    echo -e "${RED}✗ Web 管理面板服务启动失败${NC}"
+    return 1
+}
+
+# 检测虚拟化环境并显示
     local virt_env=$(detect_virtualization)
     echo -e "${BLUE}检测到虚拟化环境: ${GREEN}${virt_env}${NC}"
 
@@ -913,6 +1091,8 @@ smart_install() {
     # 下载最新的 realm 主程序
     if install_realm; then
         init_web_manager_defaults
+        install_web_panel
+        restart_web_panel_service
         echo -e "${GREEN}=== 安装完成！ ===${NC}"
         show_web_access_info
         echo -e "${YELLOW}输入快捷命令 ${GREEN}pf${YELLOW} 进入脚本交互界面${NC}"

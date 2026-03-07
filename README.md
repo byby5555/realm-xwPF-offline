@@ -104,12 +104,21 @@ curl -fsSL https://v6.gh-proxy.org/https://raw.githubusercontent.com/byby5555/re
 ```
 若加速源失效，可多次重试或更换其他具有内置加速功能的代理源
 
-安装完成后将自动显示：
-- 本机 Web 管理地址（本地 IP + 端口）
-- 随机生成的强密码账号（默认随机账号 + 强随机密码）
+安装完成后将自动：
+- 启动内置 Web 管理服务（默认 `0.0.0.0:8080`）
+- 显示本机 Web 管理地址（本地 IP + 端口）
+- 随机生成强密码账号（默认随机账号 + 强随机密码）
 
 可在主菜单进入：
 - `9. Web 管理设置`（修改 Web 端口 / 重置账号密码 / 查看访问信息）
+
+
+如果页面打不开，可排查：
+```bash
+sudo systemctl status realm-web --no-pager
+sudo journalctl -u realm-web -n 100 --no-pager
+ss -lntp | grep 8080
+```
 
 ### 一键卸载（菜单内置）
 
@@ -421,6 +430,7 @@ IP地址：MPTCP协议需要知道可以使用哪些IP地址建立子流
 系统文件
 ├── /usr/local/bin/
 │   ├── realm                    # Realm 主程序
+│   ├── realm-web-panel.py       # 内置 Web 管理面板（Python）
 │   ├── xwPF.sh                  # 管理脚本入口
 │   ├── lib/                     # 模块目录
 │   │   ├── core.sh              # 核心工具（系统检测/依赖/网络/验证）
@@ -438,7 +448,8 @@ IP地址：MPTCP协议需要知道可以使用哪些IP地址建立子流
 │       └── ...
 │
 └── /etc/systemd/system/
-    └── realm.service            # Realm 主服务文件
+    ├── realm.service            # Realm 主服务文件
+    └── realm-web.service        # Web 管理服务文件
 ```
 
 ### 按需下载（点击对应功能时才会下载）

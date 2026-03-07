@@ -308,6 +308,8 @@ uninstall_realm_stage_one() {
     # 停止服务
     svc_is_active && svc_stop
     [ "$(svc_enabled_text)" = "enabled" ] && svc_disable
+    web_svc_is_active && web_svc_stop
+    [ "$(web_svc_enabled_text)" = "enabled" ] && web_svc_disable
     # 停止健康检查服务（通过xwFailover.sh）
     if [ -f "/etc/realm/xwFailover.sh" ]; then
         bash "/etc/realm/xwFailover.sh" stop >/dev/null 2>&1
@@ -315,8 +317,9 @@ uninstall_realm_stage_one() {
     pgrep "realm" >/dev/null 2>&1 && { pkill -f "realm"; sleep 2; pkill -9 -f "realm" 2>/dev/null; }
 
     # 清理文件
-    cleanup_files_by_paths "$REALM_PATH" "$CONFIG_DIR" "$SYSTEMD_PATH" "/etc/realm"
+    cleanup_files_by_paths "$REALM_PATH" "$WEB_PANEL_PATH" "$CONFIG_DIR" "$SYSTEMD_PATH" "$WEB_SYSTEMD_PATH" "/etc/realm"
     [ -f "/etc/init.d/realm" ] && rm -f "/etc/init.d/realm"
+    [ -f "/etc/init.d/realm-web" ] && rm -f "/etc/init.d/realm-web"
     cleanup_files_by_pattern "realm" "/var/log /tmp /var/tmp"
 
     # 清理系统配置
@@ -767,7 +770,9 @@ web_panel_settings_menu() {
                 read -rp "请输入新的 Web 端口 [1-65535，当前 ${web_port}]: " new_port
                 if is_valid_port "$new_port"; then
                     set_manager_conf_value "WEB_PORT" "$new_port"
-                    echo -e "${GREEN}✓ Web 端口已更新为: ${new_port}${NC}"
+                    install_web_panel >/dev/null 2>&1
+                    restart_web_panel_service >/dev/null 2>&1
+                    echo -e "${GREEN}✓ Web 端口已更新为: ${new_port}（服务已重载）${NC}"
                 else
                     echo -e "${RED}无效端口，请输入 1-65535 的数字${NC}"
                 fi
@@ -779,7 +784,9 @@ web_panel_settings_menu() {
                 new_pass=$(generate_strong_password)
                 set_manager_conf_value "WEB_USERNAME" "$new_user"
                 set_manager_conf_value "WEB_PASSWORD" "$new_pass"
-                echo -e "${GREEN}✓ 已重置 Web 登录凭据${NC}"
+                install_web_panel >/dev/null 2>&1
+                restart_web_panel_service >/dev/null 2>&1
+                echo -e "${GREEN}✓ 已重置 Web 登录凭据（服务已重载）${NC}"
                 show_web_access_info
                 echo ""
                 read -p "按回车键继续..."
