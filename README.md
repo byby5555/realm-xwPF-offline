@@ -85,12 +85,41 @@ DTAG
 wget -qO- https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
 ```
 
+或使用 `curl`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
+```
+
 ### 网络受限使用加速源,一键安装
 
 ```bash
 wget -qO- https://v6.gh-proxy.org/https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
 ```
+
+或使用 `curl`：
+
+```bash
+curl -fsSL https://v6.gh-proxy.org/https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/xwPF.sh | sudo bash -s install
+```
 若加速源失效，可多次重试或更换其他具有内置加速功能的代理源
+
+### 一键卸载（菜单内置）
+
+安装完成后，脚本主菜单已内置 **卸载服务** 选项，可一键清理。
+
+```bash
+sudo pf
+```
+
+进入菜单后选择：
+- `8. 卸载服务`（分阶段卸载）
+
+如果 `pf` 命令不存在，也可直接运行：
+
+```bash
+sudo bash /usr/local/bin/xwPF.sh
+```
 
 ## 无法联网的离线安装
 
