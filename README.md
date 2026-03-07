@@ -172,6 +172,71 @@ bash /usr/local/bin/xwPF.sh
 </details>
 
 
+
+## Debian 直装 Web 管理版（非 Docker）实现建议
+
+你提到不走 Docker，而是在 Debian 直接实现：**可以做到**，并且支持：
+- Web 管理界面
+- 账号密码认证
+- 安装时自定义 Web 端口
+
+### 需要的依赖工具（Debian）
+
+> 下面是“脚本 + Web 管理端”组合的常见依赖，按功能分组。
+
+- 基础工具：`curl` `wget` `tar` `unzip` `jq` `bc` `ca-certificates`
+- 网络与系统工具：`iproute2` `iptables`/`nftables` `lsof` `procps` `netcat-openbsd`
+- 服务与进程：`systemd` `systemctl` `openssl`
+- Web 反向代理（可选，推荐其一）：`nginx` 或 `caddy`
+- Python 方案（若 Web 后端用 Python）：`python3` `python3-venv` `python3-pip`
+- Node.js 方案（若 Web 前端/后端用 Node）：`nodejs` `npm`（或 `pnpm`）
+
+### 可实现的 Web 功能
+
+- 规则增删改查、启停、批量操作
+- Realm 配置生成与重载
+- 负载均衡/故障转移可视化
+- 日志与状态查看
+- 导入导出配置
+
+### 密码认证如何做
+
+建议最低安全基线：
+- 账号密码登录（密码哈希：`bcrypt`/`argon2`）
+- 会话过期（Session 或 JWT）
+- 登录失败限流
+- 若使用 Cookie：启用 CSRF 防护
+
+### 安装时选择端口（建议交互方式）
+
+可在安装脚本中增加交互：
+
+```bash
+read -rp "请输入 Web 管理端口 [默认 8080]: " WEB_PORT
+WEB_PORT=${WEB_PORT:-8080}
+```
+
+然后写入配置并放行防火墙：
+
+```bash
+# 示例：写入 /etc/realm/manager.conf
+echo "WEB_PORT=${WEB_PORT}" >> /etc/realm/manager.conf
+
+# nftables/ufw 二选一放行
+# ufw allow ${WEB_PORT}/tcp
+```
+
+### 一键安装命令（非 Docker，示例）
+
+当你后续提供 `install-web-panel.sh` 后，可直接使用：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main/install-web-panel.sh | sudo bash
+```
+
+安装脚本里完成：依赖安装、端口选择、账号初始化、systemd 服务注册与启动。
+
+
 ## ✨ 核心特性
 
 - **原生Realm全功能** - 同步支持最新版realm的所有原生功能
