@@ -180,17 +180,41 @@ generate_rule_id() {
     echo $((max_id + 1))
 }
 
+# 运行白名单：read_rule_file 解析时仅允许这些 KEY 被赋值
+_READ_RULE_ALLOWED_KEYS='RULE_ID RULE_ROLE RULE_NAME SECURITY_LEVEL LISTEN_PORT LISTEN_IP THROUGH_IP REMOTE_HOST REMOTE_PORT FORWARD_TARGET TLS_SERVER_NAME TLS_CERT_PATH TLS_KEY_PATH WS_PATH WS_HOST RULE_NOTE ENABLED CREATED_TIME BALANCE_MODE TARGET_STATES WEIGHTS FAILOVER_ENABLED HEALTH_CHECK_INTERVAL FAILURE_THRESHOLD SUCCESS_THRESHOLD CONNECTION_TIMEOUT RECOVERY_COOLDOWN MPTCP_MODE PROXY_MODE'
+
 read_rule_file() {
     local rule_file="$1"
-    if [ -f "$rule_file" ]; then
-        source "$rule_file"
-        RULE_NOTE="${RULE_NOTE:-}"
-        MPTCP_MODE="${MPTCP_MODE:-off}"
-        PROXY_MODE="${PROXY_MODE:-off}"
-        return 0
-    else
+    local _line _k _v
+    if [ ! -f "$rule_file" ]; then
         return 1
     fi
+
+    # 安全解析：line-by-line 读，剥双引号/单引号，KEY 必须落在白名单。
+    # 绝不使用 source / eval，文件内的 $(cmd)、反引号、换行注入全部不再被执行。
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        [[ -z "$_line" ]] && continue
+        [[ "$_line" =~ ^[[:space:]]*# ]] && continue
+
+        if [[ "$_line" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+            _k="${BASH_REMATCH[1]}"
+            _v="${BASH_REMATCH[2]}"
+            # 剥外层双引号
+            [[ "$_v" =~ ^\"(.*)\"$ ]] && _v="${BASH_REMATCH[1]}"
+            # 剥外层单引号
+            [[ "$_v" =~ ^\'(.*)\'$ ]] && _v="${BASH_REMATCH[1]}"
+
+            # 白名单校验：只对已知允许的 KEY 进行赋值
+            if [[ " $_READ_RULE_ALLOWED_KEYS " == *" $_k "* ]]; then
+                printf -v "$_k" '%s' "$_v"
+            fi
+        fi
+    done < "$rule_file"
+
+    RULE_NOTE="${RULE_NOTE:-}"
+    MPTCP_MODE="${MPTCP_MODE:-off}"
+    PROXY_MODE="${PROXY_MODE:-off}"
+    return 0
 }
 
 get_balance_info_display() {
