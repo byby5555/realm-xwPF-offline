@@ -1091,7 +1091,6 @@ EXPORT_TIME=$(get_gmt8_time '+%Y-%m-%d %H:%M:%S')
 SCRIPT_VERSION=$SCRIPT_VERSION
 EXPORT_HOST=$(hostname 2>/dev/null || echo "unknown")
 RULES_COUNT=$rules_count
-HAS_MANAGER_CONF=$([ -f "$MANAGER_CONF" ] && echo "true" || echo "false")
 HAS_HEALTH_STATUS=$([ -f "$HEALTH_STATUS_FILE" ] && echo "true" || echo "false")
 PACKAGE_VERSION=1.0
 EOF
@@ -1103,10 +1102,7 @@ export_config_package() {
 
     local rules_count=$(get_active_rules_count)
 
-    local has_manager_conf=false
-    [ -f "$MANAGER_CONF" ] && has_manager_conf=true
-
-    if [ $rules_count -eq 0 ] && [ "$has_manager_conf" = false ]; then
+    if [ $rules_count -eq 0 ]; then
         echo -e "${RED}没有可导出的配置数据${NC}"
         echo ""
         read -p "按回车键返回..."
@@ -1115,7 +1111,6 @@ export_config_package() {
 
     echo -e "${BLUE}将要导出的完整配置：${NC}"
     echo -e "  转发规则: ${GREEN}$rules_count 条${NC}"
-    [ "$has_manager_conf" = true ] && echo -e "  管理状态: ${GREEN}包含${NC}"
     [ -f "$HEALTH_STATUS_FILE" ] && echo -e "  健康监控: ${GREEN}包含${NC}"
     echo -e "  备注权重: ${GREEN}完整保留${NC}"
     echo ""
@@ -1147,10 +1142,6 @@ export_config_package() {
         echo -e "${GREEN}✓${NC} 已收集 $rules_count 个规则文件"
     fi
 
-    if [ -f "$MANAGER_CONF" ]; then
-        cp "$MANAGER_CONF" "${package_dir}/"
-        echo -e "${GREEN}✓${NC} 已收集管理配置文件"
-    fi
 
     if [ -f "$HEALTH_STATUS_FILE" ]; then
         cp "$HEALTH_STATUS_FILE" "${package_dir}/health_status.conf"
@@ -1317,8 +1308,7 @@ import_config_package() {
     if [ -d "$RULES_DIR" ]; then
         rm -f "${RULES_DIR}"/rule-*.conf 2>/dev/null
     fi
-    rm -f "$MANAGER_CONF" 2>/dev/null
-    rm -f "$HEALTH_STATUS_FILE" 2>/dev/null
+        rm -f "$HEALTH_STATUS_FILE" 2>/dev/null
 
     init_rules_dir
 
@@ -1335,10 +1325,6 @@ import_config_package() {
         done
     fi
 
-    if [ -f "${config_dir}/manager.conf" ]; then
-        cp "${config_dir}/manager.conf" "$MANAGER_CONF"
-        echo -e "${GREEN}✓${NC} 恢复管理配置文件"
-    fi
 
     if [ -f "${config_dir}/health_status.conf" ]; then
         cp "${config_dir}/health_status.conf" "$HEALTH_STATUS_FILE"
