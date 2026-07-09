@@ -234,11 +234,31 @@ async def _main():
         tasks.append(asyncio.create_task(p.serve()))
         tasks.append(asyncio.create_task(p.probe_loop()))
 
+    # Wait for either: a serve/probe task crashed (need to bail out), or
+    # SIGTERM/SIGINT arrived (clean shutdown). asyncio.wait() returns when the
+    # first future completes — previously we waited only on `tasks` so the
+    # `stop` future was orphaned and SIGTERM left us hanging until systemd
+    # SIGKILL'd us at the 90s timeout.
+    waitable = {stop} | set(tasks)
     try:
-        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(
+            waitable, return_when=asyncio.FIRST_COMPLETED
+        )
+        if stop in done:
+            logging.info("stop signal received, shutting down...")
+        else:
+            # Some task ended unexpectedly - inspect which
+            for t in done:
+                if t is stop:
+                    continue
+                try:
+                    t.result()
+                except Exception as exc:
+                    logging.error("task %r raised: %s", t, exc)
     finally:
         for t in tasks:
-            t.cancel()
+            if not t.done():
+                t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
