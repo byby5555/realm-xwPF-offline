@@ -153,6 +153,19 @@ reorder_rule_ids() {
         new_id=$((new_id + 1))
     done
 
+    # Safety net: backup /etc/realm/rules before any destructive swap. If anything
+    # goes wrong after we rm the originals, we can restore from this tarball.
+    # Rolling back is cheap insurance against operator mistakes (e.g. someone
+    # rm'd rule-N.conf manually, leaving an inconsistent filesystem).
+    local safety_backup=""
+    if command -v tar >/dev/null 2>&1; then
+        # mktemp template must end in X (mktemp appends 6 random chars there).
+        # Use suffix via rename so the X's stay at the end of the template.
+        safety_backup="$(mktemp -u /tmp/realm-rules-backup-XXXXXX).tar.gz"
+        tar -czf "$safety_backup" -C "$RULES_DIR" . >/dev/null 2>&1 \
+            && echo -e "${BLUE}ℹ 规则备份: ${safety_backup}${NC}" >&2
+    fi
+
     # 原子性操作：避免中间状态导致的配置不一致
     if rm -f "${RULES_DIR}"/rule-*.conf && mv "${temp_dir}"/rule-*.conf "${RULES_DIR}/"; then
         rmdir "$temp_dir"
@@ -161,6 +174,13 @@ reorder_rule_ids() {
     else
         echo -e "${RED}错误: 规则重排序失败${NC}" >&2
         rm -rf "$temp_dir"
+        # Try to restore from backup
+        if [ -n "$safety_backup" ] && [ -f "$safety_backup" ]; then
+            echo -e "${YELLOW}正在从备份恢复: ${safety_backup}${NC}" >&2
+            tar -xzf "$safety_backup" -C "$RULES_DIR" >/dev/null 2>&1 \
+                && echo -e "${GREEN}✓ 规则已恢复${NC}" >&2 \
+                || echo -e "${RED}备份恢复失败，请手动检查 ${safety_backup}${NC}" >&2
+        fi
         return 1
     fi
 }
