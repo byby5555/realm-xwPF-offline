@@ -1,1 +1,2 @@
-test/
+cmd/__pycache__/
+*.pyc

@@ -1,0 +1,34 @@
+[Unit]
+Description=xwpf-failover — active/passive TCP failover proxy (xwPF)
+Documentation=https://github.com/byby5555/realm-xwPF-offline
+After=network.target realm.service
+Wants=realm.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -u /usr/local/bin/xwpf-failover -c /etc/xwpf/failover.json
+Restart=always
+RestartSec=2s
+# Run as root to bind privileged ports (e.g. 443). Read-only state dir.
+WorkingDirectory=/etc/xwpf
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xwpf-failover
+
+# Hardening: read-only config, no new privileges, protect clock.
+ReadOnlyPaths=/etc/xwpf
+ReadWritePaths=/etc/xwpf
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

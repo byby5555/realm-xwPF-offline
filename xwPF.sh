@@ -12,7 +12,8 @@ SHORTCUT_PATH="/usr/local/bin/pf"
 REPO_RAW_URL="https://raw.githubusercontent.com/byby5555/realm-xwPF-offline/main"
 
 # 模块列表（加载顺序）
-LIB_FILES=("core.sh" "rules.sh" "server.sh" "realm.sh" "ui.sh")
+# failover.sh 必须在 ui.sh 之前 (ui.sh 调用 failover_proxy_menu)
+LIB_FILES=("core.sh" "rules.sh" "server.sh" "realm.sh" "failover.sh" "ui.sh")
 
 # 颜色
 _RED='\033[0;31m'
