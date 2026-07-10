@@ -44,17 +44,67 @@ failover_py_helper() {
 
 # === Validate addr ===
 # Allow "host:port" or bare "port".
+# === Normalize addr ===
+# Strip invisible/wide characters that terminals, IMEs, or copy-paste insert
+# between visible chars (BOM, zero-width, full-width, NBSP, CR, LF, TAB).
+# Returns cleaned string on stdout; empty if nothing remains.
+failover_normalize_addr() {
+    local raw="$1"
+    XWPF_FAILOVER_NORMALIZE_RAW="$raw" python3 -c "
+import os
+raw = os.environ['XWPF_FAILOVER_NORMALIZE_RAW']
+for c in '\ufeff\u200b\u200c\u200d\u200e\u200f\u3000\u00a0\r\n\t':
+    raw = raw.replace(c, '')
+print(raw.strip(), end='')
+"
+}
+
+# === Hex dump helper for error messages ===
+# Prints raw bytes as a hex string (caller appends to error labels).
+failover_addr_debug_dump() {
+    local s="${1:-}"
+    if [ -z "$s" ]; then printf '%s' '<empty>'; return; fi
+    printf '%s' "$s" | od -An -tx1 | tr -d ' \n' | head -c 80
+}
+
+# === Validate addr (now tolerant of invisible chars) ===
 failover_validate_addr() {
-    local addr="$1"
+    local raw="$1" addr
+    addr=$(failover_normalize_addr "$raw")
+    if [[ -z "$addr" ]]; then return 1; fi
     if [[ "$addr" =~ ^([0-9]+)$ ]]; then
-        is_valid_port "$addr" || return 1
+        validate_port "$addr" || return 1
         return 0
     fi
     if [[ "$addr" =~ ^([^:]+):([0-9]+)$ ]]; then
-        is_valid_port "${BASH_REMATCH[2]}" || return 1
+        validate_port "${BASH_REMATCH[2]}" || return 1
         return 0
     fi
     return 1
+}
+
+# === Port-collision check (TCP bind probe) ===
+failover_check_port_listening() {
+    local port="${1:?port required}"
+    python3 -c "
+import socket
+for fam, addr in [(socket.AF_INET, ('0.0.0.0', $port)),
+                  (socket.AF_INET6, ('::', $port))]:
+    try:
+        s = socket.socket(fam, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(addr); s.close()
+    except OSError:
+        raise SystemExit(1)
+" 2>/dev/null
+}
+
+# === TCP-reachability probe ===
+failover_probe_reachable() {
+    local raw="$1"
+    local host="${raw%:*}"
+    local port="${raw##*:}"
+    timeout 3 bash -c "</dev/tcp/${host}/${port}" 2>/dev/null
 }
 
 # === Normalize listen addr ===
@@ -258,17 +308,23 @@ PY
 }
 
 # === Create a failover pool (interactive caller) ===
-failover_pool_create() {
+# === Direct mode: bypass realm wrapper ===
+# Daemon forwards raw TCP directly to remote - no realm server rule.
+# Faster (1 hop vs 2), simpler, but loses per-rule logging/TLS that
+# realm would provide (with security=off these are all no-ops anyway).
+failover_pool_create_direct() {
     local name="$1" public_listen="$2" primary_addr="$3" backup_csv="$4"
 
     failover_validate_addr "$public_listen" || {
-        echo -e "${RED}公开监听地址不合法: $public_listen${NC}"
+        local hex; hex=$(failover_addr_debug_dump "$public_listen")
+        echo -e "${RED}公开监听地址不合法: '$public_listen' (hex=${hex})${NC}"
         return 1
     }
     public_listen="$(failover_normalize_listen "$public_listen")"
 
     failover_validate_addr "$primary_addr" || {
-        echo -e "${RED}主后端不合法: $primary_addr${NC}"
+        local hex; hex=$(failover_addr_debug_dump "$primary_addr")
+        echo -e "${RED}主后端不合法: '$primary_addr' (hex=${hex})${NC}"
         return 1
     }
 
@@ -277,10 +333,158 @@ failover_pool_create() {
         IFS=',' read -ra backups <<< "$backup_csv"
         for b in "${backups[@]}"; do
             failover_validate_addr "$b" || {
-                echo -e "${RED}备后端不合法: $b${NC}"
+                local hex; hex=$(failover_addr_debug_dump "$b")
+                echo -e "${RED}备后端不合法: '$b' (hex=${hex})${NC}"
                 return 1
             }
         done
+    fi
+
+    local public_port="${public_listen##*:}"
+    if ! failover_check_port_listening "$public_port"; then
+        echo -e "${RED}端口 ${public_port} 已被占用 - daemon 会绑定失败${NC}"
+        ss -tlnp 2>/dev/null | grep -E "[:.]${public_port}[[:space:]]" | head -3
+        return 1
+    fi
+
+    local unreachable=()
+    for addr_target in "$primary_addr" "${backups[@]}"; do
+        if ! failover_probe_reachable "$addr_target"; then
+            unreachable+=("$addr_target")
+        fi
+    done
+    if [ ${#unreachable[@]} -gt 0 ]; then
+        echo -e "${YELLOW}警告: 以下后端从本机不可达 (可能需在远端 ufw 放行):${NC}"
+        printf '  - %s\n' "${unreachable[@]}"
+        if [ -t 0 ]; then
+            local yn=""
+            read -rt 10 -p "仍继续创建? [y/N] " yn || yn=""
+            [[ "$yn" =~ ^[Yy] ]] || { echo "已取消"; return 1; }
+        else
+            echo "(non-tty, 跳过确认)"
+        fi
+    fi
+
+    failover_pool_write_json_direct "$name" "$public_listen" "$primary_addr" "$(IFS=,; echo "${backups[*]}")"
+
+    echo -e "${GREEN}已创建主备池 '$name' (direct 模式, 不走 realm)${NC}"
+    echo -e "  公开监听: ${YELLOW}${public_listen}${NC}"
+    echo -e "  ${BLUE}主${NC}  -> ${primary_addr}"
+    local i=1
+    for b in "${backups[@]}"; do
+        echo -e "  ${BLUE}备${i}${NC} -> ${b}"
+        i=$((i+1))
+    done
+    echo
+    echo -e "${YELLOW}下一步: 在 [3] 启停守护 中启动 xwpf-failover (无需重启 realm)${NC}"
+}
+
+# === Dispatcher: --direct routes to failover_pool_create_direct ===
+# Other args are positional: <name> <listen> <primary> [backup,backup,...]
+failover_pool_create_dispatch() {
+    local direct=false
+    local positional=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --direct|-d) direct=true; shift ;;
+            --help|-h) echo "usage: failover_pool_create_dispatch [--direct|-d] <name> <listen> <primary> [backup,backup,...]"; return 0 ;;
+            --) shift; while [ $# -gt 0 ]; do positional+=("$1"); shift; done ;;
+            --*) echo -e "${RED}未知选项: $1${NC}" >&2; return 2 ;;
+            *)  positional+=("$1"); shift ;;
+        esac
+    done
+    if [ "${#positional[@]}" -lt 3 ]; then
+        echo -e "${RED}参数不足: 需要 名称 监听 主后端 [备后端...], got ${#positional[@]}${NC}" >&2
+        return 2
+    fi
+    local name="${positional[0]}" public_listen="${positional[1]}" primary_addr="${positional[2]}"
+    local backup_csv=""
+    if [ "${#positional[@]}" -gt 3 ]; then
+        local IFS=','
+        backup_csv="${positional[*]:3}"
+    fi
+    if $direct; then
+        failover_pool_create_direct "$name" "$public_listen" "$primary_addr" "$backup_csv"
+    else
+        failover_pool_create "$name" "$public_listen" "$primary_addr" "$backup_csv"
+    fi
+}
+
+# === Positional shim for callers passing --direct as first arg ===
+failover_pool_create_parse() {
+    local direct=false
+    local args=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --direct|-d) direct=true; shift ;;
+            *) args+=("$1"); shift ;;
+        esac
+    done
+    if [ "${#args[@]}" -lt 3 ] || [ "${#args[@]}" -gt 4 ]; then
+        echo "usage: failover_pool_create_parse [--direct|-d] <name> <listen> <primary> [backup_csv]" >&2
+        return 2
+    fi
+    if $direct; then
+        failover_pool_create_direct "${args[0]}" "${args[1]}" "${args[2]}" "${args[3]:-}"
+    else
+        failover_pool_create "${args[0]}" "${args[1]}" "${args[2]}" "${args[3]:-}"
+    fi
+}
+
+failover_pool_create() {
+    local name="$1" public_listen="$2" primary_addr="$3" backup_csv="$4"
+
+    # === A+B: Validate with byte-level error context ===
+    failover_validate_addr "$public_listen" || {
+        local hex; hex=$(failover_addr_debug_dump "$public_listen")
+        echo -e "${RED}公开监听地址不合法: '$public_listen' (hex=${hex})${NC}"
+        return 1
+    }
+    public_listen="$(failover_normalize_listen "$public_listen")"
+
+    failover_validate_addr "$primary_addr" || {
+        local hex; hex=$(failover_addr_debug_dump "$primary_addr")
+        echo -e "${RED}主后端不合法: '$primary_addr' (hex=${hex})${NC}"
+        return 1
+    }
+
+    local backups=()
+    if [ -n "$backup_csv" ]; then
+        IFS=',' read -ra backups <<< "$backup_csv"
+        for b in "${backups[@]}"; do
+            failover_validate_addr "$b" || {
+                local hex; hex=$(failover_addr_debug_dump "$b")
+                echo -e "${RED}备后端不合法: '$b' (hex=${hex})${NC}"
+                return 1
+            }
+        done
+    fi
+
+    # === C: pre-check listen port is free (TCP bind probe) ===
+    local public_port="${public_listen##*:}"
+    if ! failover_check_port_listening "$public_port"; then
+        echo -e "${RED}端口 ${public_port} 已被占用 — daemon 会绑定失败${NC}"
+        ss -tlnp 2>/dev/null | grep -E "[:.]${public_port}[[:space:]]" | head -3
+        return 1
+    fi
+
+    # === D: probe reachability of primary + backups (ufw gate) ===
+    local unreachable=()
+    for addr_target in "$primary_addr" "${backups[@]}"; do
+        if ! failover_probe_reachable "$addr_target"; then
+            unreachable+=("$addr_target")
+        fi
+    done
+    if [ ${#unreachable[@]} -gt 0 ]; then
+        echo -e "${YELLOW}警告: 以下后端从本机不可达 (可能需在远端 ufw 放行):${NC}"
+        printf '  - %s\n' "${unreachable[@]}"
+        if [ -t 0 ]; then
+            local yn=""
+            read -rt 10 -p "仍继续创建? [y/N] " yn || yn=""
+            [[ "$yn" =~ ^[Yy] ]] || { echo "已取消"; return 1; }
+        else
+            echo "(non-tty, 跳过确认)"
+        fi
     fi
 
     # Allocate ports and rule IDs together by INTERLEAVING the writes:
@@ -480,4 +684,49 @@ failover_log_follow() {
 
 failover_log_tail() {
     journalctl -u "${XWPF_FAILOVER_SERVICE}" -n 50 --no-pager
+}
+
+
+# === Direct-mode pool JSON writer ===
+# primary/backups are REMOTE addresses; no realm server rule.
+# Appended at end of file to avoid colliding with python heredocs elsewhere.
+failover_pool_write_json_direct() {
+    local name="$1" listen="$2" primary_addr="$3" backup_csv="$4"
+    python3 - "$XWPF_FAILOVER_CONF" "$name" "$listen" "$primary_addr" "$backup_csv" <<'PYEOF'
+import json, sys, pathlib
+conf, name, listen, primary_addr, backup_csv = sys.argv[1:6]
+try:
+    with open(conf) as f:
+        cur = json.load(f) or []
+    pools = cur if isinstance(cur, list) else []
+except Exception:
+    pools = []
+backups = [s.strip() for s in backup_csv.split(",") if s.strip()]
+pool = {
+    "name": name,
+    "listen": listen,
+    "primary": primary_addr,
+    "backups": backups,
+    "direct": True,
+    "probe": {
+        "interval_sec": 4,
+        "timeout_sec": 3,
+        "fail_threshold": 2,
+        "success_threshold": 2,
+        "cooldown_sec": 120,
+    },
+}
+replaced = False
+for i, p in enumerate(pools):
+    if p.get("name") == pool["name"]:
+        pools[i] = pool
+        replaced = True
+        break
+if not replaced:
+    pools.append(pool)
+pathlib.Path(conf).parent.mkdir(parents=True, exist_ok=True)
+with open(conf, "w") as f:
+    json.dump(pools, f, indent=2, ensure_ascii=False)
+print("wrote direct pool '" + pool["name"] + "' to " + conf + " (" + str(len(pools)) + " pool(s))")
+PYEOF
 }
