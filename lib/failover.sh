@@ -315,6 +315,14 @@ PY
 failover_pool_create_direct() {
     local name="$1" public_listen="$2" primary_addr="$3" backup_csv="$4"
 
+    # Usage hint for direct callers (dispatcher covers --help for itself).
+    if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        echo "usage: failover_pool_create_direct <name> <listen> <primary> [backup,backup,...]"
+        echo "  Writes a direct-mode pool entry into /etc/xwpf/failover.json"
+        echo "  (skips loopback realm server rule wrapper, daemon forwards raw TCP)."
+        return 0
+    fi
+
     failover_validate_addr "$public_listen" || {
         local hex; hex=$(failover_addr_debug_dump "$public_listen")
         echo -e "${RED}公开监听地址不合法: '$public_listen' (hex=${hex})${NC}"
