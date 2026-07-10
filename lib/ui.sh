@@ -201,8 +201,9 @@ rules_management_menu() {
         else
             echo -e "配置模式: ${BLUE}暂无配置${NC}"
         fi
-        echo ""
+
         ui_show_top_failover
+        echo ""
 
         echo "请选择操作:"
         echo -e "${GREEN}1.${NC} 一键导出/导入配置"
