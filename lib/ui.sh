@@ -633,6 +633,10 @@ show_brief_status() {
     else
         echo -e "转发规则: ${YELLOW}暂无${NC} (可通过 '转发配置管理' 添加)"
     fi
+
+    # 主备 active/passive 池 — 在顶层 pf 入口就显示，不要再下钻
+    ui_show_top_failover
+
     echo ""
 }
 
