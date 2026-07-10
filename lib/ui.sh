@@ -32,6 +32,61 @@ import_realm_config() {
     read -p "按回车键返回..."
 }
 
+
+# === Top-of-menu active/passive failover summary ===
+# Shown in the top-level rules menu so user can see running pools
+# without drilling into the 3rd-level failover_proxy_menu.
+ui_show_top_failover() {
+    local conf="${XWPF_FAILOVER_CONF:-/etc/xwpf/failover.json}"
+    [ -f "$conf" ] || return 0
+
+    local daemon_dot daemon_label
+    if systemctl is-active xwpf-failover >/dev/null 2>&1; then
+        daemon_dot="${GREEN}●${NC}"
+        daemon_label="运行中"
+    else
+        daemon_dot="${RED}●${NC}"
+        daemon_label="已停止"
+    fi
+
+    local raw n
+    raw=$(XWPF_TOP_FP_CONF="$conf" python3 -c '
+import json, os
+conf = os.environ.get("XWPF_TOP_FP_CONF", "/etc/xwpf/failover.json")
+try:
+    with open(conf) as f:
+        pools = json.load(f) or []
+except Exception:
+    pools = []
+if not isinstance(pools, list):
+    pools = []
+for i, p in enumerate(pools, 1):
+    name = p.get("name", "?")
+    listen = p.get("listen", "?")
+    primary = p.get("primary", "?")
+    direct = " [direct]" if p.get("direct") else ""
+    backups = p.get("backups", []) or []
+    parts = ["{i}. [{name}]{direct}  {listen} -> {primary}".format(i=i, name=name, direct=direct, listen=listen, primary=primary)]
+    if backups:
+        bk_short = ", ".join(backups[:2])
+        if len(backups) > 2:
+            bk_short += ", +" + str(len(backups) - 2)
+        parts.append("备: " + bk_short)
+    print(" | ".join(parts))
+print("__COUNT__{}__".format(len(pools)))
+')
+    n=$(printf '%s' "$raw" | grep -oE '__COUNT__[0-9]+__' | tail -1 | grep -oE '[0-9]+')
+    n="${n:-0}"
+    if [ "$n" = "0" ]; then
+        echo -e "${GRAY}主备 active/passive 池: $daemon_dot $daemon_label (无池)${NC}"
+    else
+        echo -e "${YELLOW}主备 active/passive 池 ($n 个, daemon $daemon_dot $daemon_label):${NC}"
+        printf '%s\n' "$raw" | grep -v '^__COUNT__' | while IFS= read -r line; do
+            echo -e "  • $line"
+        done
+    fi
+}
+
 rules_management_menu() {
     while true; do
         clear
@@ -147,6 +202,7 @@ rules_management_menu() {
             echo -e "配置模式: ${BLUE}暂无配置${NC}"
         fi
         echo ""
+        ui_show_top_failover
 
         echo "请选择操作:"
         echo -e "${GREEN}1.${NC} 一键导出/导入配置"
