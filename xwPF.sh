@@ -98,6 +98,8 @@ case "${1:-}" in
         _bootstrap || exit 1
         _load_libs || exit 1
         _SKIP_SCRIPT_UPDATE=1 smart_install
+        # 安装 active/passive 主备故障转移守护（幂等：已装跳过）
+        failover_install_check && failover_service_enable
         ;;
     *)
         _load_libs || exit 1

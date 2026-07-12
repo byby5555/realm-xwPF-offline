@@ -373,13 +373,24 @@ uninstall_realm_stage_one() {
     if [ -f "/etc/realm/xwFailover.sh" ]; then
         bash "/etc/realm/xwFailover.sh" stop >/dev/null 2>&1
     fi
+
+    # 停止 xwpf-failover 守护（active/passive 主备池）
+    if systemctl is-active xwpf-failover >/dev/null 2>&1; then
+        systemctl disable --now xwpf-failover >/dev/null 2>&1
+    fi
     pgrep "realm" >/dev/null 2>&1 && { pkill -f "realm"; sleep 2; pkill -9 -f "realm" 2>/dev/null; }
+    pgrep "xwpf-failover" >/dev/null 2>&1 && { pkill -9 -f "xwpf-failover"; sleep 1; }
 
     # 清理文件
     cleanup_files_by_paths "$REALM_PATH" "$CONFIG_DIR" "$SYSTEMD_PATH" "/etc/realm"
     [ -f "/etc/init.d/realm" ] && rm -f "/etc/init.d/realm"
     [ -f "/etc/systemd/system/realm-web.service" ] && rm -f "/etc/systemd/system/realm-web.service"
         cleanup_files_by_pattern "realm" "/var/log /tmp /var/tmp"
+
+    # 清理 xwpf-failover systemd unit 和配置
+    [ -f "/lib/systemd/system/xwpf-failover.service" ] && rm -f "/lib/systemd/system/xwpf-failover.service"
+    [ -f "/etc/systemd/system/xwpf-failover.service" ] && rm -f "/etc/systemd/system/xwpf-failover.service"
+    [ -f "/etc/xwpf/failover.json" ] && rm -f "/etc/xwpf/failover.json"
 
     # 清理系统配置
     [ -f "/etc/sysctl.d/90-enable-MPTCP.conf" ] && rm -f "/etc/sysctl.d/90-enable-MPTCP.conf"
@@ -392,6 +403,9 @@ uninstall_script_files() {
     # 清理主脚本和模块目录
     rm -f "$INSTALL_DIR/xwPF.sh"
     [ -d "$LIB_DIR" ] && rm -rf "$LIB_DIR"
+
+    # 清理 xwpf-failover daemon 文件（cmd/ 子目录）
+    [ -d "$INSTALL_DIR/cmd" ] && rm -rf "$INSTALL_DIR/cmd"
 
     # 清理 pf 快捷命令（symlink 或 wrapper）
     local exec_dirs=("/usr/local/bin" "/usr/bin" "/bin" "/opt/bin" "/root/bin")
