@@ -132,6 +132,7 @@ sudo bash /usr/local/bin/xwPF.sh
 
 - **主脚本**：[xwPF.sh](https://github.com/byby5555/realm-xwPF-offline/raw/main/xwPF.sh)
 - **模块文件**（全部需要）：https://github.com/byby5555/realm-xwPF-offline/tree/main/lib
+- **主备守护文件**（active/passive 热备功能）：https://github.com/byby5555/realm-xwPF-offline/tree/main/cmd
 
 - **Realm 程序**（根据系统架构选择）：
 
@@ -146,12 +147,16 @@ sudo bash /usr/local/bin/xwPF.sh
 ```
 /usr/local/bin/            ← 脚本安装目录（固定路径）
 ├── xwPF.sh                ← 主脚本
-└── lib/                   ← 创建 lib 子目录
-    ├── core.sh
-    ├── rules.sh
-    ├── server.sh
-    ├── realm.sh
-    └── ui.sh
+├── lib/                   ← 创建 lib 子目录
+│   ├── core.sh
+│   ├── rules.sh
+│   ├── server.sh
+│   ├── realm.sh
+│   ├── failover.sh        ← 主备池核心模块（含 daemon 安装函数）
+│   └── ui.sh
+└── cmd/                   ← 主备守护文件（active/passive 热备 daemon）
+    ├── xwpf-failover.py
+    └── xwpf-failover.service
 
 ~/                         ← Realm 压缩包放在任意其他位置
 └── realm-xxx.tar.gz
